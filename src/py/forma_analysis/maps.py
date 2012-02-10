@@ -223,31 +223,50 @@ def parseDatesToPaths(in_csv, field_prefix, img_ext):
 
     return outfiles
 
-def massageData(fields, hansen, vals, hansen_val=103, vcf_val=101):
+def massageData(fields, hansen, vals, hansen_val=103, vcf_val=101, threshold=50):
 
-    # add a pure FORMA field for first period
-    forma20051130 = vals[:,0].reshape(-1, 1)
-    forma20051130[np.where((vals[:,0] < 50) & (vals[:,0] >= 100))] = vcf_val
+    # anything less than threshold gets assigned vcf_val
+    vals[np.where(vals < threshold)] = vcf_val
+
+    # create a pure FORMA field for first period
+    # want it to show up before the vcf-hansen-forma image for 2005-12-01
+    print "Creating field only showing FORMA"
+    forma20051130 = vals[:,0].copy().reshape(-1, 1)
+
     fields.insert(0, field_prefix + "20051130_forma")
 
-    # replace prob values
-    vals[np.where(hansen > 0)[0], 0] = hansen_val
-    vals[np.where(vals < 50)[0], 0] = vcf_val
+    # create a FORMA-hansen field highlighting where FORMA missed
+    print "Creating field highlighting FORMA error"
+    forma20051129 = vals[:,0].copy().reshape(-1, 1)
+    is_forma = np.where(forma20051129 != vcf_val)
+    is_forma_vals = forma20051129[is_forma]
+    is_hansen = np.where(hansen > 0)
+
+    forma20051129[is_hansen] = hansen_val
+    forma20051129[is_forma] = is_forma_vals
+
+    fields.insert(0, field_prefix + "20051129_forma")
+
+    # replace prob values with hansen_val if those pixels had hansen hits
+    vals[np.where(hansen > 0)] = hansen_val
 
     # re-encode hansen for color map
     hansen[np.where(hansen > 0)] = hansen_val
     hansen[np.where(hansen == 0)] = vcf_val
 
+    # add hansen field
     hansen = hansen.reshape(-1, 1)
-    fields.insert(0, field_prefix + "20051129_hansen")
+    fields.insert(0, field_prefix + "20051128_hansen")
 
     # encode vcf for color map - we want all pixels
     vcf = np.empty(hansen.shape, dtype=hansen.dtype).reshape(-1, 1)
     vcf[:] = vcf_val
+
+    # add VCF field
     fields.insert(0, field_prefix + "20000101_vcf")
 
     # make one big array with all of our data
-    vals = np.hstack((vcf, hansen, forma20051130, vals))
+    vals = np.hstack((vcf, hansen, forma20051129, forma20051130, vals))
 
     return vals
 
