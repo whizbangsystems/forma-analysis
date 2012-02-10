@@ -1,9 +1,6 @@
 """
-We're going to generate a bunch of rasters - merge them all together
-using mosaicing tools.
-"""
+Rough outline:
 
-"""
 0) read metadata in csv file
 1) calculate latlon extent for ascii grid
 2) calculate array size using modh modv line sample
@@ -29,20 +26,48 @@ import numpy as np
 import reproject
 import rasterutils
 
-def dataPrep(country):
-    """
-    config:
-    number of static files (3 for now)
-    start and end dates
-    resolution
-    thresh range
-    paths, filename conventions
+def parseOptions(parser):
+    parser.add_option("-r", "--resolution", type="int", default=1000,
+                      help="Resolution of input and output data", dest="res")
+    parser.add_option("-x", "--extension", default="png", help="Filename extension, used for image type", dest="img_ext")
+    parser.add_option("-c", "--colormap", default=True, help="Apply color map to array?", dest="color_map")
+    parser.add_option("-n", "--nodata", type="int", default=0,
+                      help="NoData value", dest="nodata")
+    parser.add_option("-f", "--fieldprefix", default="prob", help="Prefix used to extract dates from field name", dest="field_prefix")
+    parser.add_option("-t", "--gdaltype", default="byte", help="GDAL data type", dest="gdal_type")
+    parser.add_option("-s", "--spatialreference", default="modis", help="Spatial reference or coordinate system of output: \nmodis, sphere_sin, sin0, and wgs84", dest="t_srs")
+    opts, args = parser.parse_args()
 
-    actions:
-    1) get output data in stata format
-    2) get static data
-    3) append all static files together
-    """
+    if len(args) == 0:
+        parser.print_help()
+        from sys import exit
+        exit()
+
+    in_csv = args[0]
+    res = opts.res
+    img_ext = opts.img_ext
+    color_map = opts.color_map
+    nodata = opts.nodata
+    field_prefix = opts.field_prefix
+    gdal_type = opts.gdal_type
+    t_srs = opts.t_srs
+
+    printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs)
+
+    return in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs
+
+def printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs):
+    print
+    print "Creating maps with the following parameters:"
+    print "Input file:", in_csv
+    print "Resolution:", res
+    print "Image extension:", img_ext
+    print "Apply color map?:", color_map
+    print "NoData value:", nodata
+    print "Field prefix:", field_prefix
+    print "GDAL data type:", gdal_type
+    print "Target spatial reference system:", t_srs
+    print
 
     return
 
@@ -64,7 +89,7 @@ def getColorParams(name=None):
 
     # TODO: Parameterize bins, colors, etc. in the Stata code so don't have keep track of this code in two places
 
-    default_bins = np.array([50, 60, 70, 80, 90, 100, 110])
+    default_bins = np.array([50, 60, 70, 80, 90, 100, 102])
 
     default_cmap = np.array([   [  0,  0,  0],
                                 [255, 255,  0],
@@ -72,8 +97,8 @@ def getColorParams(name=None):
                                 [255, 127,  0],
                                 [255,  63,  0],
                                 [255,   0,  0],
-                                [101,  45,  5],
-                                [ 21,  85, 44]])
+                                [ 21,  85, 44],
+                                [101,  45,  5]])
 
 
     latest = np.array([1, 100, 110])
@@ -122,78 +147,10 @@ def getColorParams(name=None):
         return latest, latest_cmap
     if name == ["moratorium"]:
         return moratorium, moratorium_cmap
-    if name == ["forma", "hansen", "vcf"] or name==None:
+    if name == ["forma", "hansen", "vcf"] or name==[True]:
         return default_bins, default_cmap
     
     raise ValueError("No color map defined for name: " + str(name))
-
-def stataProcessing(country):
-    """
-    config: nothing hardcoded in Stata
-    pass path, country, start/end dates + thresh range into dofile via CL
-
-    actions:
-    1) Convert static data to Stata format
-    2) keep country, lat, lon, modh, modv, line, sample
-    3) merge estimated data and static as reformatted above
-    4) multiply all probabilities by 100, recast int
-    5) create variables to store date when a pixel went over various thresholds
-    6) based on start date, gen period when passed thresholds
-    5) outsheet everything to csv file, noheader
-    6) outsheet min/max modh modv line sample lat lon for each threshold of interest
-    """
-
-    return
-
-def mergeCountryData(countries):
-    """
-    # was thinking of generating ascii grids as a mosaic before getting to
-    # Arc, but would run into max array size for Numpy with large number of countries
-
-    loop through countries and append all csv files together - this is why we
-     need to retain country var
-    """
-    return
-
-def genDateList(start_date, end_date):
-    dates = []
-
-    yyyy = int(start_date[:4])
-    mm = int(start_date[4:])
-
-    start_date = date(yyyy, mm, 1)
-
-    yyyy = int(end_date[:4])
-    mm = int(end_date[4:])
-
-    end_date = date(yyyy, mm, 1)
-
-    dt = start_date
-
-    while dt <= end_date:
-
-        dates.append(dt)
-        yyyy = dt.year
-        mm = dt.month
-        mm += 1
-        if mm > 12:
-            mm = 1
-            yyyy += 1
-
-        dt = date(yyyy, mm, 1)
-
-    return dates
-
-def saveToSinuCsv(xs, ys, vals):
-    out = np.hstack((xs.reshape(-1, 1), ys.reshape(-1, 1),
-                     vals.astype(np.float32)))
-
-    np.savetxt("/Users/robin/delete/indonesia/indonesia_xy.csv", out, fmt='%f',
-               delimiter=",")
-
-    import sys
-
-    sys.exit()
 
 def getFormat(img_ext):
     formats = {"png":"PNG", "asc":"AAIGRID", "txt":"AAIGRID",
@@ -208,12 +165,12 @@ def getFormat(img_ext):
 def getFields(in_csv):
     f = open(in_csv, "r")
     header = f.readline().strip()
-    if not header.startswith("modh,modv,sample,line,"):
+    if not header.startswith("modh,modv,sample,line,hansen"):
         f.close()
-        raise ValueError("Error - Data must be formatted as follows:\nmodh,modv,sample,line,DATA_0,...DATA_N\n" + header)
+        raise ValueError("Error - Data must be formatted as follows:\nmodh,modv,sample,line,hansen,DATA_0,...DATA_N\n" + header)
     f.close()
 
-    return header.split("modh,modv,sample,line,")[1].split(",")
+    return header.split("modh,modv,sample,line,hansen,")[1].split(",")
 
 def parseData(in_csv):
 
@@ -225,22 +182,21 @@ def parseData(in_csv):
     modv = data[:,1]
     sample = data[:,2]
     line = data[:,3]
-    vals = data[:,4:]
+    hansen = data[:,4]
+    vals = data[:,5:]
 
-    return modh, modv, sample, line, vals
+    return modh, modv, sample, line, hansen, vals
 
 def parseCoordinates(res, modh, modv, sample, line):
     xmags, ymags = reproject.modis2globalmags(res, modh, modv, sample, line)
     xs, ys = reproject.globalmags2sinuxy(xmags, ymags)
-
-    #saveToSinuCsv(xs, ys, vals)
-    #xs, ys = rasterutils.modisGridToXY(modh, modv, sample, line, pixelres)
-
     xmin, xmax, ymin, ymax = rasterutils.xyToBbox(res, xs, ys)
 
-    return xs, ys, xmin, xmax, ymin, ymax
+    bbox = [xmin, xmax, ymin, ymax]
 
-def getPaths(in_csv, fieldprefix, img_ext):
+    return xs, ys, bbox
+
+def parseDatesToPaths(in_csv, field_prefix, img_ext):
 
     fields = getFields(in_csv)
 
@@ -248,13 +204,18 @@ def getPaths(in_csv, fieldprefix, img_ext):
     iso = os.path.splitext(fname)[0]
 
     outfiles = list()
+    
+
 
     for field in fields:
         try:
-            dt = field.split(fieldprefix)[1]
-            dt = date(int(dt[:4]), int(dt[4:]), 1)
-            outfiles.append("%s/%s_%i%02i.%s" % (path, iso, dt.year,
-                                               dt.month, img_ext))
+            dt = field.split(field_prefix)[1]
+            if len(dt) == 6:
+                dt = date(int(dt[:4]), int(dt[4:]), 1)
+            else:
+                dt = date(int(dt[:4]), int(dt[4:6]), int(dt[6:8]))
+            outfiles.append("%s/%s_%i%02i%02i.%s" % (path, iso, dt.year,
+                                               dt.month, dt.day, img_ext))
         except (TypeError, ValueError, IndexError):
             # just means the header doesn't have dates in vars,
             # so let's just leave the raw field as filename
@@ -262,16 +223,88 @@ def getPaths(in_csv, fieldprefix, img_ext):
 
     return outfiles
 
-def saveRasters(outfiles, xs, ys, vals, res, nodata, xmin, xmax, ymin, ymax, fmt, color_map, gdal_type, t_srs):
+def massageData(fields, hansen, vals, hansen_val=103, vcf_val=101):
 
-    # Want to loop through multiple columns of probabilities if they exist
+    # add a pure FORMA field for first period
+    forma20051130 = vals[:,0].reshape(-1, 1)
+    forma20051130[np.where((vals[:,0] < 50) & (vals[:,0] >= 100))] = vcf_val
+    fields.insert(0, field_prefix + "20051130_forma")
+
+    # replace prob values
+    vals[np.where(hansen > 0)[0], 0] = hansen_val
+    vals[np.where(vals < 50)[0], 0] = vcf_val
+
+    # re-encode hansen for color map
+    hansen[np.where(hansen > 0)] = hansen_val
+    hansen[np.where(hansen == 0)] = vcf_val
+
+    hansen = hansen.reshape(-1, 1)
+    fields.insert(0, field_prefix + "20051129_hansen")
+
+    # encode vcf for color map - we want all pixels
+    vcf = np.empty(hansen.shape, dtype=hansen.dtype).reshape(-1, 1)
+    vcf[:] = vcf_val
+    fields.insert(0, field_prefix + "20000101_vcf")
+
+    # make one big array with all of our data
+    vals = np.hstack((vcf, hansen, forma20051130, vals))
+
+    return vals
+
+def fieldNameToFname(path, field_prefix, field, base_fname, img_ext):
+    dt = field.split(field_prefix)[1]
+
+    if len(dt) == 6 or len(dt) == 8:
+        if len(dt) == 6:
+            dt = date(int(dt[:4]), int(dt[4:]), 1)
+        else:
+            dt = date(int(dt[:4]), int(dt[4:6]), int(dt[6:8]))
+        print dt.year, dt.month, dt.day
+        outfile = "%s/%s_%i%02i%02i.%s" % (path, base_fname, dt.year, dt.month, dt.day, img_ext)
+
+    else:
+        outfile = "%s/%s_%s.%s" % (path, base_fname, dt, img_ext)
+        print dt
+        print "YOYOYOO"
+
+    print "Yo"
+
+    return outfile
+
+def miscDetails(in_csv, t_srs, img_ext, hansen, vals):
+    t_srs = rasterutils.getSRS(t_srs)
+    fmt = getFormat(img_ext)
+
+    fields = getFields(in_csv)
+
+    path, base_fname = os.path.split(in_csv)
+    base_fname = os.path.splitext(base_fname)[0]
+
+    vals = massageData(fields, hansen, vals)
+
+    return path, base_fname, fields, vals, t_srs, fmt
+
+def saveRasters(path, fname, fields, fmt, field_prefix, img_ext, xs, ys,
+                vals, res, nodata, bbox,
+                color_map, gdal_type, t_srs):
+    """
+    saveRasters takes various parameters and
+    """
+
+    xmin, xmax, ymin, ymax = bbox
+
     idx = 0
+    print vals.shape
 
-    for outfile in outfiles:
+    for field in fields:
+
+        outfile = fieldNameToFname(path, field_prefix, field, fname, img_ext)
+        print outfile
+        print idx
         data = rasterutils.xyToArray(xs, ys, vals[:, idx],
-                            rasterutils.getModisCellsize(res),
-                           nodata=nodata)
-        if color_map:
+                                     rasterutils.getModisCellsize(res),
+                                     nodata=nodata)
+        if color_map != False:
             bins, cmap = getColorParams(color_map)
             data = rasterutils.applyColormap(data, bins, cmap)
 
@@ -279,41 +312,25 @@ def saveRasters(outfiles, xs, ys, vals, res, nodata, xmin, xmax, ymin, ymax, fmt
                                       rasterutils.getModisCellsize(res),
                                       xmin, xmax, ymin, ymax,
                                       fmt, gdal_type, t_srs, nodata)
-
         idx += 1
-    return
-
-def printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs):
-    print 
-    print "Creating maps with the following parameters:"
-    print "Input file:", in_csv
-    print "Resolution:", res
-    print "Image extension:", img_ext
-    print "Apply color map?:", color_map
-    print "NoData value:", nodata
-    print "Field prefix:", field_prefix
-    print "GDAL data type:", gdal_type
-    print "Target spatial reference system:", t_srs
-    print
-
     return
 
 def main(in_csv, res=1000, img_ext="png", color_map='forma', nodata=0,
          field_prefix="prob", gdal_type="byte", t_srs="modis"):
 
-    # note that there is a curve in map images - we're screening by latlon in Stata
-    # then projecting sinu in gdal. curve is probably an artifact of that
+    # note that there may be a curve on edge of map images - we were
+    # screening by latlon in Stata then projecting sinu in gdal.
+    # curve is probably an artifact of this
 
+    modh, modv, sample, line, hansen, vals = parseData(in_csv)
 
-    printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs)
+    xs, ys, bbox = parseCoordinates(res, modh, modv, sample, line)
 
-    modh, modv, sample, line, vals = parseData(in_csv)
-    xs, ys, xmin, xmax, ymin, ymax = parseCoordinates(res, modh, modv, sample, line)
-    t_srs = rasterutils.getSRS(t_srs)
-    fmt = getFormat(img_ext)
-    outfiles = getPaths(in_csv, field_prefix, img_ext)
+    path, base_fname, fields, vals, t_srs, fmt = miscDetails(in_csv, t_srs, img_ext, hansen, vals)
 
-    saveRasters(outfiles, xs, ys, vals, res, nodata, xmin, xmax, ymin, ymax, fmt, color_map, gdal_type, t_srs)
+    print fields
+    saveRasters(path, base_fname, fields, fmt, field_prefix, img_ext, xs, ys, vals,
+                res, nodata, bbox, color_map, gdal_type, t_srs)
 
     return
 
@@ -323,40 +340,8 @@ if __name__ == "__main__":
     from optparse import OptionParser
 
     parser = OptionParser()
-    parser.add_option("-r", "--resolution", type="int", default=1000,
-                      help="Resolution of input and output data", dest="res")
-    parser.add_option("-x", "--extension", default="png", help="Filename extension, used for image type", dest="img_ext")
-    parser.add_option("-c", "--colormap", default=True, help="Apply color map to array?", dest="color_map")
-    parser.add_option("-n", "--nodata", type="int", default=0,
-                      help="NoData value", dest="nodata")
-    parser.add_option("-f", "--fieldprefix", default="prob", help="Prefix used to extract dates from field name", dest="field_prefix")
-    parser.add_option("-t", "--gdaltype", default="byte", help="GDAL data type", dest="gdal_type")
-    parser.add_option("-s", "--spatialreference", default="modis", help="Spatial reference or coordinate system of output: \nmodis, sphere_sin, sin0, and wgs84", dest="t_srs")
-    opts, args = parser.parse_args()
 
-    if len(args) == 0:
-        parser.print_help()
-        from sys import exit
-        exit()
-        
-    in_csv = args[0]
-    res = opts.res
-    img_ext = opts.img_ext
-    color_map = opts.color_map
-    nodata = opts.nodata
-    field_prefix = opts.field_prefix
-    gdal_type = opts.gdal_type
-    t_srs = opts.t_srs
+    in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs = parseOptions(parser)
 
     main(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs)
     
-    # ANDREW
-    #    path = "/Users/robin/delete/indonesia/"
-    #    country = "indonesia-andrew"
-    #    in_csv = "%s%s.csv" % (path, country)
-    #    res = 1000
-    #    img_ext = "png"
-    #    nodata = 255
-    #    genImages(country, res, in_csv, path, img_ext, color_map=False,
-    #              nodata=nodata)
-    #
