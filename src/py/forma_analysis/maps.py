@@ -36,6 +36,7 @@ def parseOptions(parser):
     parser.add_option("-f", "--fieldprefix", default="prob", help="Prefix used to extract dates from field name", dest="field_prefix")
     parser.add_option("-t", "--gdaltype", default="byte", help="GDAL data type", dest="gdal_type")
     parser.add_option("-s", "--spatialreference", default="modis", help="Spatial reference or coordinate system of output: \nmodis, sphere_sin, sin0, and wgs84", dest="t_srs")
+    parser.add_option("-e", "--error", default=False, help="Highlight error by showing where FORMA missed Hansen", dest="error")
     opts, args = parser.parse_args()
 
     if len(args) == 0:
@@ -51,12 +52,13 @@ def parseOptions(parser):
     field_prefix = opts.field_prefix
     gdal_type = opts.gdal_type
     t_srs = opts.t_srs
+    error = opts.error
 
-    printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs)
+    printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs, error)
 
-    return in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs
+    return in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs, error
 
-def printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs):
+def printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs, error):
     print
     print "Creating maps with the following parameters:"
     print "Input file:", in_csv
@@ -67,6 +69,7 @@ def printParams(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type
     print "Field prefix:", field_prefix
     print "GDAL data type:", gdal_type
     print "Target spatial reference system:", t_srs
+    print "Highlight error:", error
     print
 
     return
@@ -223,10 +226,23 @@ def parseDatesToPaths(in_csv, field_prefix, img_ext):
 
     return outfiles
 
-def massageData(fields, hansen, vals, hansen_val=103, vcf_val=101, threshold=50):
+def massageData(fields, hansen, vals, error, hansen_val=103, vcf_val=101, threshold=50):
 
-    # anything less than threshold gets assigned vcf_val
-    vals[np.where(vals < threshold)] = vcf_val
+    hansen[np.where(hansen > 0)] = hansen_val
+
+    if error:
+        # replace prob values with hansen_val if those pixels had hansen hits
+        # only replaces for dates where below threshold
+        too_low = np.where(vals < threshold)
+        vals[too_low] = hansen[too_low[0]] # [0] gives us only rows from where output tuple
+
+        # anything less than threshold gets assigned vcf_val
+        vals[np.where(vals < threshold)] = vcf_val
+    else:
+        # anything less than threshold gets assigned vcf_val
+        vals[np.where(vals < threshold)] = vcf_val
+        # replace with hansen for all dates
+        vals[np.where(hansen == hansen_val)] = hansen_val
 
     # create a pure FORMA field for first period
     # want it to show up before the vcf-hansen-forma image for 2005-12-01
@@ -246,9 +262,6 @@ def massageData(fields, hansen, vals, hansen_val=103, vcf_val=101, threshold=50)
     forma20051129[is_forma] = is_forma_vals
 
     fields.insert(0, field_prefix + "20051129_forma")
-
-    # replace prob values with hansen_val if those pixels had hansen hits
-    vals[np.where(hansen > 0)] = hansen_val
 
     # re-encode hansen for color map
     hansen[np.where(hansen > 0)] = hansen_val
@@ -290,7 +303,7 @@ def fieldNameToFname(path, field_prefix, field, base_fname, img_ext):
 
     return outfile
 
-def miscDetails(in_csv, t_srs, img_ext, hansen, vals):
+def miscDetails(in_csv, t_srs, img_ext, hansen, vals, error):
     t_srs = rasterutils.getSRS(t_srs)
     fmt = getFormat(img_ext)
 
@@ -299,7 +312,7 @@ def miscDetails(in_csv, t_srs, img_ext, hansen, vals):
     path, base_fname = os.path.split(in_csv)
     base_fname = os.path.splitext(base_fname)[0]
 
-    vals = massageData(fields, hansen, vals)
+    vals = massageData(fields, hansen, vals, error)
 
     return path, base_fname, fields, vals, t_srs, fmt
 
@@ -335,7 +348,7 @@ def saveRasters(path, fname, fields, fmt, field_prefix, img_ext, xs, ys,
     return
 
 def main(in_csv, res=1000, img_ext="png", color_map='forma', nodata=0,
-         field_prefix="prob", gdal_type="byte", t_srs="modis"):
+         field_prefix="prob", gdal_type="byte", t_srs="modis", error=False):
 
     # note that there may be a curve on edge of map images - we were
     # screening by latlon in Stata then projecting sinu in gdal.
@@ -345,7 +358,7 @@ def main(in_csv, res=1000, img_ext="png", color_map='forma', nodata=0,
 
     xs, ys, bbox = parseCoordinates(res, modh, modv, sample, line)
 
-    path, base_fname, fields, vals, t_srs, fmt = miscDetails(in_csv, t_srs, img_ext, hansen, vals)
+    path, base_fname, fields, vals, t_srs, fmt = miscDetails(in_csv, t_srs, img_ext, hansen, vals, error)
 
     print fields
     saveRasters(path, base_fname, fields, fmt, field_prefix, img_ext, xs, ys, vals,
@@ -360,7 +373,7 @@ if __name__ == "__main__":
 
     parser = OptionParser()
 
-    in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs = parseOptions(parser)
+    in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs, error = parseOptions(parser)
 
-    main(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs)
+    main(in_csv, res, img_ext, color_map, nodata, field_prefix, gdal_type, t_srs, error)
     
