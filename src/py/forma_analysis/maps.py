@@ -78,7 +78,7 @@ def getColorParams(name=None):
     """Returns bins and color maps needed to draw nice-looking rasters.
 
     Note that the default values assume that Hansen hits are represented by
-    the number 101, and VCF values by 111. This is determined by the Stata
+    the number 103, and VCF values by 101. This is determined by the Stata
     code, so if something looks wrong, make sure that the Stata and Python
     code agree in this respect.
 
@@ -86,15 +86,12 @@ def getColorParams(name=None):
      values (50-99), brown for Hansen, and green for VCF.
 
     """
-    
-    if type(name) != list:
-        name = [name]
 
     # TODO: Parameterize bins, colors, etc. in the Stata code so don't have keep track of this code in two places
 
-    default_bins = np.array([50, 60, 70, 80, 90, 100, 102])
+    bins = np.array([50, 60, 70, 80, 90, 100, 102])
 
-    default_cmap = np.array([   [  0,  0,  0],
+    cmap = np.array([   [  0,  0,  0],
                                 [255, 255,  0],
                                 [255, 191,  0],
                                 [255, 127,  0],
@@ -103,57 +100,7 @@ def getColorParams(name=None):
                                 [ 21,  85, 44],
                                 [101,  45,  5]])
 
-
-    latest = np.array([1, 100, 110])
-    latest_cmap = np.array([ [  0,  0,  0],
-                        [255,  0,  0],
-                        [50, 50, 50],
-                        [21, 85, 44]])
-
-    latest = np.array([1, 100, 104, 110])
-    latest_cmap = np.array([ [  0,  0,  0],
-                             [255, 255, 50],
-                             [50, 50, 50],
-                             [255,  0,  0],
-                             [21, 85, 44]])
-
-    vcf = [53, 131, 17]
-    hansen = [137, 137, 137]
-    post_2005 = [253, 255, 0]
-    latest_hits = [166, 92, 60]
-
-    probs_cutoff = 49
-    vcf_cutoff = 102
-    hansen_cutoff = 104
-    post_2005_cutoff = 106
-    latest_cutoff = 108
-
-    latest = np.array([1,
-                       vcf_cutoff,
-                       hansen_cutoff,
-                       post_2005_cutoff])
-
-    latest_cmap = np.array([[0, 0, 0], [0, 123, 37], [166, 23, 0], [255, 255, 0], [255, 255, 0]])
-    
-    moratorium = np.array([1, 2, 3, 4])
-    moratorium_cmap = np.array([[0, 0, 0],
-                                [21, 85, 44],
-                                [50, 50, 50],
-                                [255, 255, 50],
-                                [255, 0, 0]])
-                                
-    if name == ["forma"]:
-        return default_bins[:-2, :], default_cmap[:-2, :]
-    if name == ["forma", "hansen"]:
-        return default_bins[:-1, :], default_cmap[:-1, :]
-    if name == ["latest"]:
-        return latest, latest_cmap
-    if name == ["moratorium"]:
-        return moratorium, moratorium_cmap
-    if name == ["forma", "hansen", "vcf"] or name==[True]:
-        return default_bins, default_cmap
-    
-    raise ValueError("No color map defined for name: " + str(name))
+    return bins, cmap
 
 def getFormat(img_ext):
     formats = {"png":"PNG", "asc":"AAIGRID", "txt":"AAIGRID",
